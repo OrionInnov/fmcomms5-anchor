@@ -14,7 +14,7 @@ from .core import FMCOMMS5
 COMMS_PORT = 2206
 
 # FMCOMMS5 buffer size (in samples)
-BUFFER_LENGTH = 2**16
+BUFFER_LENGTH = 2**19
 
 
 def main(args):
