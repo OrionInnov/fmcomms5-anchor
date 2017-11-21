@@ -1,2 +1,2 @@
-from .fmcomms5 import *
+from .fmcomms5 import FMCOMMS5
 

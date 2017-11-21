@@ -19,7 +19,7 @@ RX_PORT_SELECT = "B_BALANCED"
 GAIN_CONTROL_MODE = "manual"
 
 # hardware gain value (in dB)
-RX_GAIN_VALUE = 40
+RX_GAIN_VALUE = 30
 
 # minimum value such that signal exists (either I or Q, not abs)
 MIN_SIGNAL_VALUE = 64
@@ -27,33 +27,31 @@ MIN_SIGNAL_VALUE = 64
 
 class FMCOMMS5(object):
 
-    def __init__(self, bandwidth, samp_rate, center_freq, buff_size):
-
-        self.bandwidth = bandwidth
-        self.samp_rate = samp_rate
-        self.center_freq = center_freq
-        self.buff_size = buff_size
+    def __init__(self, bandwidth, samp_rate, cntr_freq, buff_size):
 
         # create local IIO context
         self.context = iio.Context()
 
         # configure the AD9361 devices
-        self._configure_ad9361_phy()
-        self._synchronize_devices(fix_timing=True)
-        self._create_streams()
+        self._configure_ad9361_phy(bandwidth, samp_rate, cntr_freq)
+        self._synchronize_devices(fix_timing=False)
+        self._create_streams(buff_size)
 
-    def _configure_ad9361_phy(self):
+    def _configure_ad9361_phy(self, bandwidth, samp_rate, cntr_freq):
 
         # access physical devices
         self.device_a = self.context.find_device("ad9361-phy")
         self.device_b = self.context.find_device("ad9361-phy-B")
 
-        # set mode to RX only
-        self.device_a.attrs["ensm_mode"].value = ENSM_MODE
-        self.device_b.attrs["ensm_mode"].value = ENSM_MODE
-
         # configure physical devices
         for dev in (self.device_a, self.device_b):
+
+            # set mode to RX only
+            dev.attrs["ensm_mode"].value = ENSM_MODE
+
+            # setting a small number of buffers ensures that the "next"
+            # batch is as fresh as possible
+            dev.set_kernel_buffers_count(2)
 
             # configure RX channels
             for idx in range(2):
@@ -70,8 +68,8 @@ class FMCOMMS5(object):
 
                     # set bandwidth and sampling frequency
                     chan.attrs["rf_port_select"].value = RX_PORT_SELECT
-                    chan.attrs["rf_bandwidth"].value = str(self.bandwidth)
-                    chan.attrs["sampling_frequency"].value = str(self.samp_rate)
+                    chan.attrs["rf_bandwidth"].value = str(bandwidth)
+                    chan.attrs["sampling_frequency"].value = str(samp_rate)
 
                     # set DC tracking parameters
                     chan.attrs["bb_dc_offset_tracking_en"].value = str(1)
@@ -83,7 +81,7 @@ class FMCOMMS5(object):
 
             # set LO channel attributes
             chan_lo = dev.find_channel("altvoltage0", True)
-            chan_lo.attrs["frequency"].value = str(self.center_freq)
+            chan_lo.attrs["frequency"].value = str(cntr_freq)
 
     def _synchronize_devices(self, fix_timing=False):
 
@@ -110,7 +108,7 @@ class FMCOMMS5(object):
         self.device_a.attrs["ensm_mode"].value = ensm_mode_a
         self.device_b.attrs["ensm_mode"].value = ensm_mode_b
 
-    def _create_streams(self):
+    def _create_streams(self, buff_size):
 
         self.device_rx = self.context.find_device("cf-ad9361-A")
 
@@ -120,8 +118,8 @@ class FMCOMMS5(object):
             chan.enabled = True
 
         # create buffer (4 channels x 2 elements x 2 bytes)
-        self.buffer_rx = iio.Buffer(self.device_rx, self.buff_size)
-        self.buf_type = ctypes.c_byte * self.buff_size * 4 * 2 * 2
+        self.buffer_rx = iio.Buffer(self.device_rx, buff_size)
+        self.buf_type = ctypes.c_byte * buff_size * 4 * 2 * 2
 
     def check_overflow(self):
 
@@ -145,10 +143,5 @@ class FMCOMMS5(object):
 
     def read_buffer(self):
 
-        # TODO(liuf): parse into four individual channels
-        # 0, 8, ... - channel 1, I data
-        # 1, 9, ... - channel 1, Q data
-        # 2, 10, ... - channel 2, I data
-        # 3, 11, ... - channel 2, Q data
-        # ...
         return self.buffer_rx.read()
+
