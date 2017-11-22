@@ -34,7 +34,7 @@ class FMCOMMS5(object):
 
         # configure the AD9361 devices
         self._configure_ad9361_phy(bandwidth, samp_rate, cntr_freq)
-        self._synchronize_devices(fix_timing=False)
+        self._synchronize_devices(fix_timing=True)
         self._create_streams(buff_size)
 
     def _configure_ad9361_phy(self, bandwidth, samp_rate, cntr_freq):
@@ -43,15 +43,16 @@ class FMCOMMS5(object):
         self.device_a = self.context.find_device("ad9361-phy")
         self.device_b = self.context.find_device("ad9361-phy-B")
 
+        # set mode to RX only
+        self.device_a.attrs["ensm_mode"].value = ENSM_MODE
+        self.device_b.attrs["ensm_mode"].value = ENSM_MODE
+
         # configure physical devices
         for dev in (self.device_a, self.device_b):
 
-            # set mode to RX only
-            dev.attrs["ensm_mode"].value = ENSM_MODE
-
             # setting a small number of buffers ensures that the "next"
             # batch is as fresh as possible
-            dev.set_kernel_buffers_count(2)
+            #dev.set_kernel_buffers_count(2)
 
             # configure RX channels
             for idx in range(2):
@@ -144,4 +145,3 @@ class FMCOMMS5(object):
     def read_buffer(self):
 
         return self.buffer_rx.read()
-
