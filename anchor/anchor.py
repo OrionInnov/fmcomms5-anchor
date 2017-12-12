@@ -94,7 +94,7 @@ def command_daemon(cmd_queue, buff_len, samp_rate):
 
             # reboot anchor
             if cmd == "boot":
-                break
+                subprocess.call(["sudo", "reboot"])
 
             # ping back
             elif cmd == "ping":
