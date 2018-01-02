@@ -27,7 +27,7 @@ MIN_SIGNAL_VALUE = 64
 
 class FMCOMMS5(object):
 
-    def __init__(self, bandwidth, samp_rate, cntr_freq, buff_size):
+    def __init__(self, bandwidth, samp_rate, cntr_freq, buff_len):
 
         # create local IIO context
         self.context = iio.Context()
@@ -35,7 +35,7 @@ class FMCOMMS5(object):
         # configure the AD9361 devices
         self._configure_ad9361_phy(bandwidth, samp_rate, cntr_freq)
         self._synchronize_devices(fix_timing=True)
-        self._create_streams(buff_size)
+        self._create_streams(buff_len)
 
     def _configure_ad9361_phy(self, bandwidth, samp_rate, cntr_freq):
 
@@ -109,7 +109,7 @@ class FMCOMMS5(object):
         self.device_a.attrs["ensm_mode"].value = ensm_mode_a
         self.device_b.attrs["ensm_mode"].value = ensm_mode_b
 
-    def _create_streams(self, buff_size):
+    def _create_streams(self, buff_len):
 
         self.device_rx = self.context.find_device("cf-ad9361-A")
 
@@ -118,9 +118,9 @@ class FMCOMMS5(object):
             chan = self.device_rx.find_channel("voltage" + str(n))
             chan.enabled = True
 
-        # create buffer (4 channels x 2 elements x 2 bytes)
-        self.buffer_rx = iio.Buffer(self.device_rx, buff_size)
-        self.buf_type = ctypes.c_byte * buff_size * 4 * 2 * 2
+        # create IIO buffer object
+        self.buffer_rx = iio.Buffer(self.device_rx, buff_len)
+        self.buff_size = buff_len * 4 * 2 * 2
 
     def check_overflow(self):
 
@@ -130,18 +130,11 @@ class FMCOMMS5(object):
 
         self.buffer_rx.refill()
 
-    def check_buffer(self):
-
-        # hacky way to directly read from buffer
+    def get_buffer(self):
+        
+        # hacky way to get starting address of IIO buffer
         start = iio._buffer_start(self.buffer_rx._buffer)
-        buf_arr = self.buf_type.from_address(start)
 
-        # load memory directly
-        samps = np.frombuffer(buf_arr, np.int16)
-        max_val = np.abs(samps[::256]).max()
-
-        return max_val > MIN_SIGNAL_VALUE
-
-    def read_buffer(self):
-
-        return self.buffer_rx.read()
+        # it is the user's responsibility to copy the return value to a new
+        # array if modifications are made outside of the FMCOMMS5 object
+        return (start, self.buff_size)

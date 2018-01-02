@@ -7,16 +7,13 @@ import Queue
 import socket
 import subprocess
 
+from .comms import socket_ext
 from .core import FMCOMMS5
 
 
 # host PC communication
 CMD_PORT = 2206
 DATA_PORT = 2207
-
-
-# FMCOMMS5 buffer size (in samples)
-MAX_PKT_SIZE = 2**16 - 1 - 8 - 20
 
 
 class StreamProcess(multiprocessing.Process):
@@ -34,9 +31,7 @@ class StreamProcess(multiprocessing.Process):
                                  args.cntr_freq, args.buff_len)
 
         # create socket
-        self.data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.data_sock.bind(("0.0.0.0", DATA_PORT))
-        self.max_sz = MAX_PKT_SIZE
+        self.data_sock = socket_ext.socket_udp("0.0.0.0", DATA_PORT)
 
         # holder variables: host address and number of batches
         self.send_addr = None
@@ -51,9 +46,9 @@ class StreamProcess(multiprocessing.Process):
             # send data, if necessary
             self.fetch_inst()
             if self.num_send > 0:
-                data = self.fmcomms5.read_buffer()
-                self.send_data(data)
-                self.num_send -= 1
+                self.send_data()
+
+        socket_ext.socket_close(self.data_sock)
 
     def fetch_inst(self):
 
@@ -63,19 +58,17 @@ class StreamProcess(multiprocessing.Process):
         except Queue.Empty:
             return
 
-        # host's data port is +10000 away from command port
+        # host's data port is +1000 away from command port
         self.send_addr = (cmd[0][0], cmd[0][1] + 1000)
         self.num_send = cmd[1]
 
-    def send_data(self, data):
+    def send_data(self):
 
-        # send data in max-size packets
-        for n in range(0, len(data), self.max_sz):
-            end = n + self.max_sz
-            self.data_sock.sendto(data[n:end], self.send_addr)
+        (data, size) = self.fmcomms5.get_buffer()
+        (addr, port) = self.send_addr
+        socket_ext.sendto_all(self.data_sock, data, size, addr, port)
 
-        # empty packet denotes end of sequence
-        self.data_sock.sendto("", self.send_addr)
+        self.num_send -= 1
 
 
 def command_daemon(cmd_queue, buff_len, samp_rate):
@@ -92,8 +85,12 @@ def command_daemon(cmd_queue, buff_len, samp_rate):
         while True:
             cmd = conn.recv(4)
 
+            # shutdown anchor
+            if cmd == "halt":
+                subprocess.call(["sudo", "poweroff"])
+
             # reboot anchor
-            if cmd == "boot":
+            elif cmd == "boot":
                 subprocess.call(["sudo", "reboot"])
 
             # ping back
