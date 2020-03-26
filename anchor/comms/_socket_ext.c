@@ -25,13 +25,13 @@ int socket_udp(char* addr, uint16_t port) {
 
     /* create socket address  */
     struct sockaddr_in sockaddr;
-    memset((void *) &sockaddr, 0, SOCKADDR_SZ);
+    memset((void*) &sockaddr, 0, SOCKADDR_SZ);
     inet_aton(addr, &sockaddr.sin_addr);
     sockaddr.sin_port = htons(port);
     sockaddr.sin_family = AF_INET;
 
     /* attempt to bind socket to port */
-    if (bind(fd, (struct sockaddr *) &sockaddr, SOCKADDR_SZ) < 0) {
+    if (bind(fd, (struct sockaddr*) &sockaddr, SOCKADDR_SZ) < 0) {
         perror("bind failed");
         return 0;
     }
@@ -43,7 +43,7 @@ int socket_udp(char* addr, uint16_t port) {
 void sendto_all(int fd, void* data, uint32_t len, char* haddr,
                 uint16_t hport) {
 
-    char *buf = (char *) data;
+    char* buf = (char*) data;
     uint32_t pktsz = MAX_PKT_SIZE;
 
     /* compute number of packets required to send entire buffer */
@@ -54,7 +54,7 @@ void sendto_all(int fd, void* data, uint32_t len, char* haddr,
 
     /* create host address  */
     struct sockaddr_in hostaddr;
-    memset((void *) &hostaddr, 0, SOCKADDR_SZ);
+    memset((void*) &hostaddr, 0, SOCKADDR_SZ);
     inet_aton(haddr, &hostaddr.sin_addr);
     hostaddr.sin_port = htons(hport);
     hostaddr.sin_family = AF_INET;
@@ -62,14 +62,14 @@ void sendto_all(int fd, void* data, uint32_t len, char* haddr,
     /* send all data */
     for (int i = 0; i < npkts; i++) {
         pktsz = (pktsz < len) ? pktsz : len;
-        sendto(fd, (void *) buf, pktsz, 0, (struct sockaddr *) &hostaddr,
+        sendto(fd, (void*) buf, pktsz, 0, (struct sockaddr*) &hostaddr,
                SOCKADDR_SZ);
         len -= pktsz;
         buf += pktsz;
     }
 
     /* empty packet denotes end of stream */
-    sendto(fd, (void *) buf, 0, 0, (struct sockaddr *) &hostaddr,
+    sendto(fd, (void*) buf, 0, 0, (struct sockaddr*) &hostaddr,
            SOCKADDR_SZ);
 }
 

@@ -22,33 +22,33 @@ GAIN_CONTROL_MODE = "manual"
 RX_GAIN_VALUE = 30
 
 # minimum value such that signal exists (either I or Q, not abs)
-MIN_SIGNAL_VALUE = 64
+MIN_SIGNAL_VALUE = 8
 
 
 class FMCOMMS5(object):
 
-    def __init__(self, bandwidth, samp_rate, cntr_freq, buff_len):
+    def __init__(self, bw, rate, freq, blen):
 
         # create local IIO context
-        self.context = iio.Context()
+        self.iio_ctx = iio.Context()
 
         # configure the AD9361 devices
-        self._configure_ad9361_phy(bandwidth, samp_rate, cntr_freq)
+        self._configure_ad9361_phy(bw, rate, freq)
         self._synchronize_devices(fix_timing=True)
-        self._create_streams(buff_len)
+        self._create_streams(blen)
 
-    def _configure_ad9361_phy(self, bandwidth, samp_rate, cntr_freq):
+    def _configure_ad9361_phy(self, bw, rate, freq):
 
         # access physical devices
-        self.device_a = self.context.find_device("ad9361-phy")
-        self.device_b = self.context.find_device("ad9361-phy-B")
+        self.dev_a = self.iio_ctx.find_device("ad9361-phy")
+        self.dev_b = self.iio_ctx.find_device("ad9361-phy-B")
 
         # set mode to RX only
-        self.device_a.attrs["ensm_mode"].value = ENSM_MODE
-        self.device_b.attrs["ensm_mode"].value = ENSM_MODE
+        self.dev_a.attrs["ensm_mode"].value = ENSM_MODE
+        self.dev_b.attrs["ensm_mode"].value = ENSM_MODE
 
         # configure physical devices
-        for dev in (self.device_a, self.device_b):
+        for dev in (self.dev_a, self.dev_b):
 
             # setting a small number of buffers ensures that the "next"
             # batch is as fresh as possible
@@ -67,51 +67,55 @@ class FMCOMMS5(object):
                 # set chip attributes (valid only for 0th channel)
                 if idx == 0:
 
-                    # set bandwidth and sampling frequency
+                    # set bw and sampling frequency
                     chan.attrs["rf_port_select"].value = RX_PORT_SELECT
-                    chan.attrs["rf_bandwidth"].value = str(bandwidth)
-                    chan.attrs["sampling_frequency"].value = str(samp_rate)
+                    chan.attrs["rf_bw"].value = str(bw)
+                    chan.attrs["sampling_frequency"].value = str(rate)
 
                     # set DC tracking parameters
                     chan.attrs["bb_dc_offset_tracking_en"].value = str(1)
                     chan.attrs["rf_dc_offset_tracking_en"].value = str(1)
                     chan.attrs["quadrature_tracking_en"].value = str(0)
 
-                # DEBUG: gain value must be set again (for some reason)
+                # TODO: gain value must be set again (for some reason)
                 chan.attrs["hardwaregain"].value = str(RX_GAIN_VALUE)
 
             # set LO channel attributes
             chan_lo = dev.find_channel("altvoltage0", True)
-            chan_lo.attrs["frequency"].value = str(cntr_freq)
+            chan_lo.attrs["frequency"].value = str(freq)
 
     def _synchronize_devices(self, fix_timing=False):
 
         # fixup interface timing (buggy?)
         if fix_timing:
-            self.device_b.reg_write(0x6, self.device_a.reg_read(0x6))
-            self.device_b.reg_write(0x7, self.device_a.reg_read(0x7))
+            self.dev_b.reg_write(0x6, self.dev_a.reg_read(0x6))
+            self.dev_b.reg_write(0x7, self.dev_a.reg_read(0x7))
 
         # set "ensm_mode" flags
-        ensm_mode_a = self.device_a.attrs["ensm_mode"].value
-        ensm_mode_b = self.device_b.attrs["ensm_mode"].value
-        self.device_a.attrs["ensm_mode"].value = "alert"
-        self.device_b.attrs["ensm_mode"].value = "alert"
+        ensm_mode_a = self.dev_a.attrs["ensm_mode"].value
+        ensm_mode_b = self.dev_b.attrs["ensm_mode"].value
+        self.dev_a.attrs["ensm_mode"].value = "alert"
+        self.dev_b.attrs["ensm_mode"].value = "alert"
 
         # copied from libad9361-iio/ad9361_multichip_sync.c
         for n in range(6):
-            self.device_b.attrs["multichip_sync"].value = str(n)
-            self.device_a.attrs["multichip_sync"].value = str(n)
+            self.dev_b.attrs["multichip_sync"].value = str(n)
+            self.dev_a.attrs["multichip_sync"].value = str(n)
 
         # allow sync to propagate
         time.sleep(1)
 
         # set "ensm_mode" flags
-        self.device_a.attrs["ensm_mode"].value = ensm_mode_a
-        self.device_b.attrs["ensm_mode"].value = ensm_mode_b
+        self.dev_a.attrs["ensm_mode"].value = ensm_mode_a
+        self.dev_b.attrs["ensm_mode"].value = ensm_mode_b
 
-    def _create_streams(self, buff_len):
+    def _synchronize_phases(self):
 
-        self.device_rx = self.context.find_device("cf-ad9361-A")
+        pass
+
+    def _create_streams(self, blen):
+
+        self.device_rx = self.iio_ctx.find_device("cf-ad9361-A")
 
         # configure master streaming devices
         for n in range(8):
@@ -119,8 +123,8 @@ class FMCOMMS5(object):
             chan.enabled = True
 
         # create IIO buffer object
-        self.buffer_rx = iio.Buffer(self.device_rx, buff_len)
-        self.buff_size = buff_len * 4 * 2 * 2
+        self.buf_rx = iio.Buffer(self.device_rx, blen)
+        self.sz_buf = blen * 4 * 2 * 2
 
     def check_overflow(self):
 
@@ -128,13 +132,23 @@ class FMCOMMS5(object):
 
     def refill_buffer(self):
 
-        self.buffer_rx.refill()
+        # buffer size is always constant
+        self.buf_rx.refill()
+        return self.sz_buf
 
-    def get_buffer(self):
-        
-        # hacky way to get starting address of IIO buffer
-        start = iio._buffer_start(self.buffer_rx._buffer)
+    def get_buffer_ptr(self):
 
         # it is the user's responsibility to copy the return value to a new
         # array if modifications are made outside of the FMCOMMS5 object
-        return (start, self.buff_size)
+        return iio._buffer_start(self.buf_rx._buffer)
+
+    def check_buffer(self):
+
+        # without copying memory, check the RSSI of the existing buffer
+        ptr = self.get_buffer_ptr()
+        arr = numpy.ctypeslib.as_array(ptr, shape=(1, self.sz_buf))
+        arr = arr.view(np.int16).reshape((8, -1))
+
+        # read data from channel 0
+        mag0 = np.linalg.norm(arr[:2,:], axis=0)
+        return np.any(mag0 > MIN_SIGNAL_VALUE)
