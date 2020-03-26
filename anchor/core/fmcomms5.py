@@ -8,6 +8,8 @@ import time
 import iio
 import numpy as np
 
+libad9361 = ctypes.CDLL("libad9361.so")
+
 
 # operational mode
 ENSM_MODE = "rx"
@@ -34,7 +36,7 @@ class FMCOMMS5(object):
 
         # configure the AD9361 devices
         self._configure_ad9361_phy(bw, rate, freq)
-        self._synchronize_devices(fix_timing=True)
+        self._synchronize_phases(freq)
         self._create_streams(blen)
 
     def _configure_ad9361_phy(self, bw, rate, freq):
@@ -69,7 +71,7 @@ class FMCOMMS5(object):
 
                     # set bw and sampling frequency
                     chan.attrs["rf_port_select"].value = RX_PORT_SELECT
-                    chan.attrs["rf_bw"].value = str(bw)
+                    chan.attrs["rf_bandwidth"].value = str(bw)
                     chan.attrs["sampling_frequency"].value = str(rate)
 
                     # set DC tracking parameters
@@ -84,34 +86,15 @@ class FMCOMMS5(object):
             chan_lo = dev.find_channel("altvoltage0", True)
             chan_lo.attrs["frequency"].value = str(freq)
 
-    def _synchronize_devices(self, fix_timing=False):
+    def _synchronize_devices(self):
 
-        # fixup interface timing (buggy?)
-        if fix_timing:
-            self.dev_b.reg_write(0x6, self.dev_a.reg_read(0x6))
-            self.dev_b.reg_write(0x7, self.dev_a.reg_read(0x7))
+        master = self.dev_a._device
+        slaves = ctypes.pointer(self.dev_a._device)
+        libad9361.ad9361_multichip_sync(master, slaves, 1, 3)
 
-        # set "ensm_mode" flags
-        ensm_mode_a = self.dev_a.attrs["ensm_mode"].value
-        ensm_mode_b = self.dev_b.attrs["ensm_mode"].value
-        self.dev_a.attrs["ensm_mode"].value = "alert"
-        self.dev_b.attrs["ensm_mode"].value = "alert"
+    def _synchronize_phases(self, freq):
 
-        # copied from libad9361-iio/ad9361_multichip_sync.c
-        for n in range(6):
-            self.dev_b.attrs["multichip_sync"].value = str(n)
-            self.dev_a.attrs["multichip_sync"].value = str(n)
-
-        # allow sync to propagate
-        time.sleep(1)
-
-        # set "ensm_mode" flags
-        self.dev_a.attrs["ensm_mode"].value = ensm_mode_a
-        self.dev_b.attrs["ensm_mode"].value = ensm_mode_b
-
-    def _synchronize_phases(self):
-
-        pass
+        libad9361.ad9361_fmcomms5_phase_sync(self.iio_ctx._context, freq)
 
     def _create_streams(self, blen):
 
@@ -152,3 +135,5 @@ class FMCOMMS5(object):
         # read data from channel 0
         mag0 = np.linalg.norm(arr[:2,:], axis=0)
         return np.any(mag0 > MIN_SIGNAL_VALUE)
+
+

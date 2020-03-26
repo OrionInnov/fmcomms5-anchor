@@ -29,9 +29,11 @@ def main(args):
 
     # create FMCOMMS5 device
     fmcomms5 = FMCOMMS5(args.bw, args.rate, args.freq, args.blen)
+    print("Created FMCOMMS5 object")
 
     # open socket
     sock = socket_ext.socket_udp("0.0.0.0", DATA_PORT)
+    print("Opened socket")
 
     # continuously read from FMCOMMS5
     while True:
