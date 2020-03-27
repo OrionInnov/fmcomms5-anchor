@@ -13,9 +13,9 @@ DATA_PORT = 9133
 # argparse
 parser = argparse.ArgumentParser(description="Configure and execute the anchor daemon.")
 parser.add_argument("-b", "--bw", type=int, default=int(2e6), help="RF bandwidth")
-parser.add_argument("-f", "--freq", type=long, default=long(915e6), help="center frequency")
+parser.add_argument("-f", "--freq", type=int, default=int(915e6), help="center frequency")
 parser.add_argument("-r", "--rate", type=int, default=int(5e6), help="sampling rate")
-parser.add_argument("-l", "--blen", type=int, default=int(), help="buffer length in samples")
+parser.add_argument("-l", "--blen", type=int, default=64, help="buffer length in samples")
 parser.add_argument("-a", "--addr", type=str, default="192.168.100.100", help="server IP address")
 parser.add_argument("-p", "--port", type=int, default=9133, help="server port")
 
@@ -29,13 +29,13 @@ def main(args):
 
     # create FMCOMMS5 device
     fmcomms5 = FMCOMMS5(args.bw, args.rate, args.freq, args.blen)
-    print("Created FMCOMMS5 object")
 
     # open socket
     sock = socket_ext.socket_udp("0.0.0.0", DATA_PORT)
     print("Opened socket")
 
     # continuously read from FMCOMMS5
+    is_active = False
     while True:
         sz = fmcomms5.refill_buffer()
 
@@ -43,6 +43,15 @@ def main(args):
         if fmcomms5.check_buffer():
             ptr = fmcomms5.get_buffer_ptr()
             socket_ext.sendto_all(sock, ptr, sz, addr, port)
+            is_active = True
+            continue
+
+        # if we reached this point, the the buffer did not contain any signal
+        if is_active:
+            socket_ext.sendto_all(sock, 0, 0, addr, port)
+            print("Sent end packet")
+
+        is_active = False
 
 
 main(args)

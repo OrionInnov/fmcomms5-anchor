@@ -9,10 +9,8 @@ import iio
 import numpy as np
 
 libad9361 = ctypes.CDLL("libad9361.so")
+c_int16_p = ctypes.POINTER(ctypes.c_int16)
 
-
-# operational mode
-ENSM_MODE = "rx"
 
 # port selection
 RX_PORT_SELECT = "B_BALANCED"
@@ -24,12 +22,17 @@ GAIN_CONTROL_MODE = "manual"
 RX_GAIN_VALUE = 30
 
 # minimum value such that signal exists (either I or Q, not abs)
-MIN_SIGNAL_VALUE = 8
+MIN_SIGNAL_VALUE = 32
 
 
 class FMCOMMS5(object):
 
     def __init__(self, bw, rate, freq, blen):
+
+        bw = int(bw)
+        rate = int(rate)
+        freq = int(freq)
+        blen = int(blen)
 
         # create local IIO context
         self.iio_ctx = iio.Context()
@@ -46,8 +49,8 @@ class FMCOMMS5(object):
         self.dev_b = self.iio_ctx.find_device("ad9361-phy-B")
 
         # set mode to RX only
-        self.dev_a.attrs["ensm_mode"].value = ENSM_MODE
-        self.dev_b.attrs["ensm_mode"].value = ENSM_MODE
+        #self.dev_a.attrs["ensm_mode"].value = "rx"
+        #self.dev_b.attrs["ensm_mode"].value = "rx"
 
         # configure physical devices
         for dev in (self.dev_a, self.dev_b):
@@ -86,6 +89,8 @@ class FMCOMMS5(object):
             chan_lo = dev.find_channel("altvoltage0", True)
             chan_lo.attrs["frequency"].value = str(freq)
 
+            print("Chip {0} configured".format(dev.name))
+
     def _synchronize_devices(self):
 
         master = self.dev_a._device
@@ -95,29 +100,32 @@ class FMCOMMS5(object):
     def _synchronize_phases(self, freq):
 
         libad9361.ad9361_fmcomms5_phase_sync(self.iio_ctx._context, freq)
+        print("FMCOMMS5 phase synchronization complete")
 
     def _create_streams(self, blen):
 
-        self.device_rx = self.iio_ctx.find_device("cf-ad9361-A")
+        self.dev_rx = self.iio_ctx.find_device("cf-ad9361-A")
 
         # configure master streaming devices
         for n in range(8):
-            chan = self.device_rx.find_channel("voltage" + str(n))
+            chan = self.dev_rx.find_channel("voltage" + str(n))
             chan.enabled = True
 
         # create IIO buffer object
-        self.buf_rx = iio.Buffer(self.device_rx, blen)
+        self.buf_rx = iio.Buffer(self.dev_rx, blen)
         self.sz_buf = blen * 4 * 2 * 2
+
+        print("Streaming buffer created")
 
     def check_overflow(self):
 
-        return self.device_rx.reg_read(ctypes.c_uint32(0x80000088)) & 4
+        return self.dev_rx.reg_read(ctypes.c_uint32(0x80000088)) & 4
 
     def refill_buffer(self):
 
         # buffer size is always constant
         self.buf_rx.refill()
-        return self.sz_buf
+        return self.buf_rx._length
 
     def get_buffer_ptr(self):
 
@@ -127,10 +135,12 @@ class FMCOMMS5(object):
 
     def check_buffer(self):
 
+        if self.check_overflow():
+            print("Overflow detected")
+
         # without copying memory, check the RSSI of the existing buffer
-        ptr = self.get_buffer_ptr()
-        arr = numpy.ctypeslib.as_array(ptr, shape=(1, self.sz_buf))
-        arr = arr.view(np.int16).reshape((8, -1))
+        ptr = ctypes.cast(self.get_buffer_ptr(), c_int16_p)
+        arr = np.ctypeslib.as_array(ptr, shape=(8, self.buf_rx._samples_count))
 
         # read data from channel 0
         mag0 = np.linalg.norm(arr[:2,:], axis=0)
