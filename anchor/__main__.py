@@ -43,7 +43,7 @@ def xfer(stop, queue, addr, port):
             time.sleep(0.1)
             continue
         if len(data) == 0:
-            print("send")
+            print("Sent data batch")
         sock.sendto(data, (addr, port))
 
 
@@ -65,9 +65,6 @@ def main(args):
     print("Spawned network process")
 
     # continuously read from FMCOMMS5
-    n = 0
-    import timeit
-    start = timeit.default_timer()
     is_active = False
     while True:
         fmcomms5.refill_buffer()
@@ -81,11 +78,6 @@ def main(args):
             queue.put(bytes())
 
         is_active = False
-
-        n = n + 1
-        if n * args.blen >= 10000000:
-            print(timeit.default_timer() - start)
-            break
 
     stop.set()
 
