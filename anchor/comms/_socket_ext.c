@@ -51,6 +51,9 @@ void sendto_all(int fd, void* data, uint32_t len, char* haddr,
     if (len % pktsz > 0) {
         npkts++;
     }
+    if (!npkts) {
+        npkts = 1;
+    }
 
     /* create host address  */
     struct sockaddr_in hostaddr;
@@ -69,8 +72,8 @@ void sendto_all(int fd, void* data, uint32_t len, char* haddr,
     }
 
     /* empty packet denotes end of stream */
-    sendto(fd, (void*) buf, 0, 0, (struct sockaddr*) &hostaddr,
-           SOCKADDR_SZ);
+    //sendto(fd, (void*) buf, 0, 0, (struct sockaddr*) &hostaddr,
+    //       SOCKADDR_SZ);
 }
 
 
