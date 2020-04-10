@@ -12,16 +12,15 @@ import numpy as np
 
 # AD9361 C library
 libad9361 = ctypes.CDLL("libad9361.so")
+libad9361.ad9361_fmcomms5_multichip_sync.argtypes = [ctypes.c_void_p,
+                                                     ctypes.c_uint]
+libad9361.ad9361_fmcomms5_multichip_sync.restype = ctypes.c_int
 libad9361.ad9361_fmcomms5_phase_sync.argtypes = [ctypes.c_void_p,
                                                  ctypes.c_longlong]
 libad9361.ad9361_fmcomms5_phase_sync.restype = ctypes.c_int
 
 # pointer to memory location with int16 values
 c_int16_p = ctypes.POINTER(ctypes.c_int16)
-
-# port selection
-TX_PORT_SELECT = "A"
-RX_PORT_SELECT = "A_BALANCED"
 
 # gain control mode
 RX_GAIN_MODE = "manual"
@@ -31,7 +30,7 @@ RX_GAIN_VALUE = 32
 TX_GAIN_VALUE = -20
 
 # minimum value such that signal exists (either I or Q, not abs)
-MIN_SIGNAL_VALUE = 64
+MIN_SIGNAL_VALUE = 32
 
 
 class FMCOMMS5(object):
@@ -44,15 +43,13 @@ class FMCOMMS5(object):
         # access physical devices
         self.dev_a = self.iio_ctx.find_device("ad9361-phy")
         self.dev_b = self.iio_ctx.find_device("ad9361-phy-B")
+        self.devs = (self.dev_a, self.dev_b)
 
-        # configure the AD9361 devices
-        #self.synchronize_phases(freq)
-        #self.create_streams(blen)
         self.data = None
 
-    def configure_ad9361_rx(self, bw, rate):
+    def configure_rx(self, bw, rate):
 
-        for dev in (self.dev_a, self.dev_b):
+        for dev in self.devs:
 
             # configure RX channels
             for idx in range(2):
@@ -68,18 +65,17 @@ class FMCOMMS5(object):
                 if idx == 0:
 
                     # set bw and sampling frequency
-                    chan.attrs["rf_port_select"].value = RX_PORT_SELECT
                     chan.attrs["rf_bandwidth"].value = str(bw)
                     chan.attrs["sampling_frequency"].value = str(rate)
 
                     # set DC tracking parameters
-                    #chan.attrs["bb_dc_offset_tracking_en"].value = str(1)
-                    #chan.attrs["rf_dc_offset_tracking_en"].value = str(1)
-                    #chan.attrs["quadrature_tracking_en"].value = str(0) 
+                    chan.attrs["bb_dc_offset_tracking_en"].value = str(1)
+                    chan.attrs["rf_dc_offset_tracking_en"].value = str(1)
+                    chan.attrs["quadrature_tracking_en"].value = str(1) 
 
-    def configure_ad9361_tx(self, bw, rate):
+    def configure_tx(self, bw, rate):
 
-        for dev in (self.dev_a, self.dev_b):
+        for dev in self.devs:
 
             # configure TX channels
             for idx in range(2):
@@ -92,25 +88,37 @@ class FMCOMMS5(object):
                 if idx == 0:
 
                     # set bw and sampling frequency
-                    chan.attrs["rf_port_select"].value = TX_PORT_SELECT
                     chan.attrs["rf_bandwidth"].value = str(bw)
                     chan.attrs["sampling_frequency"].value = str(rate)
 
-    def configure_ad9361_lo(self, freq):
+    def set_rx_port(self, port):
 
-        for dev in (self.dev_a, self.dev_b):
+        for dev in self.devs:
+            chan = dev.find_channel("voltage0", False)
+            chan.attrs["rf_port_select"].value = port
 
-            # set LO channel attributes (LO always output)
+    def set_tx_port(self, port):
+
+        for dev in self.devs:
+            chan = dev.find_channel("voltage0", True)
+            chan.attrs["rf_port_select"].value = port
+
+    def set_rx_lo_freq(self, freq):
+
+        for dev in self.devs:
             chan_rxlo = dev.find_channel("altvoltage0", True)
             chan_rxlo.attrs["frequency"].value = str(freq)
+
+    def set_tx_lo_freq(self, freq):
+
+        for dev in self.devs:
             chan_txlo = dev.find_channel("altvoltage1", True)
             chan_txlo.attrs["frequency"].value = str(freq)
 
     def synchronize_devices(self):
 
-        master = self.dev_a._device
-        slaves = ctypes.pointer(self.dev_a._device)
-        libad9361.ad9361_multichip_sync(master, slaves, 1, 3)
+        # directly call C library for multichip sychronization
+        return libad9361.ad9361_fmcomms5_multichip_sync(self.iio_ctx._context, 3)
 
     def synchronize_phases(self, freq):
 
@@ -128,7 +136,6 @@ class FMCOMMS5(object):
 
         # create IIO buffer object
         self.buf_rx = iio.Buffer(self.dev_rx, blen)
-        self.sz_buf = blen * 4 * 2 * 2
 
     def check_overflow(self):
 
