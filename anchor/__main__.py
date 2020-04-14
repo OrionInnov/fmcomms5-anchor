@@ -18,7 +18,7 @@ DATA_PORT = 9133
 parser = argparse.ArgumentParser(description="Configure and execute the anchor daemon.")
 parser.add_argument("-b", "--bw", type=int, default=1625000, help="RF bandwidth")
 parser.add_argument("-f", "--freq", type=int, default=int(915e6), help="center frequency")
-parser.add_argument("-r", "--rate", type=int, default=2083334, help="sampling rate")
+parser.add_argument("-r", "--rate", type=int, default=2000000, help="sampling rate")
 parser.add_argument("-l", "--blen", type=int, default=1000, help="buffer length in samples")
 parser.add_argument("-a", "--addr", type=str, default="192.168.100.100", help="server IP address")
 parser.add_argument("-p", "--port", type=int, default=9133, help="server port")
@@ -51,11 +51,10 @@ def main(args):
 
     # create FMCOMMS5 device
     fmcomms5 = FMCOMMS5()
-    fmcomms5.configure_rx(args.bw, args.rate)
-    fmcomms5.synchronize_phases(args.freq)
+    #fmcomms5.configure_bb(args.bw, args.rate)
+    #fmcomms5.synchronize_phases(args.freq)
+    #fmcomms5.set_rx_port("A_BALANCED")
     #fmcomms5.set_rx_lo_freq(args.freq)
-    #fmcomms5.synchronize_devices()
-    fmcomms5.set_rx_port("B_BALANCED")
     fmcomms5.create_streams(args.blen)
     print("FMCOMMS5 configuration complete")
 

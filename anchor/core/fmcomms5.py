@@ -12,6 +12,13 @@ import numpy as np
 
 # AD9361 C library
 libad9361 = ctypes.CDLL("libad9361.so")
+libad9361.ad9361_set_bb_rate_custom_filter_manual.argtypes = [ctypes.c_void_p,
+                                                              ctypes.c_ulong,
+                                                              ctypes.c_ulong,
+                                                              ctypes.c_ulong,
+                                                              ctypes.c_ulong,
+                                                              ctypes.c_ulong]
+libad9361.ad9361_set_bb_rate_custom_filter_manual.restype = ctypes.c_int
 libad9361.ad9361_fmcomms5_multichip_sync.argtypes = [ctypes.c_void_p,
                                                      ctypes.c_uint]
 libad9361.ad9361_fmcomms5_multichip_sync.restype = ctypes.c_int
@@ -22,10 +29,8 @@ libad9361.ad9361_fmcomms5_phase_sync.restype = ctypes.c_int
 # pointer to memory location with int16 values
 c_int16_p = ctypes.POINTER(ctypes.c_int16)
 
-# gain control mode
+# gain parameters
 RX_GAIN_MODE = "manual"
-
-# hardware gain value (in dB)
 RX_GAIN_VALUE = 32
 TX_GAIN_VALUE = -20
 
@@ -46,6 +51,35 @@ class FMCOMMS5(object):
         self.devs = (self.dev_a, self.dev_b)
 
         self.data = None
+
+    def configure_bb(self, bw, rate):
+
+        # configure pass frequency based on bandwidth
+        fpass = int(bw / 2)
+        fstop = int(fpass * 1.2)
+
+        for dev in self.devs:
+
+            # set bandwidth and rate using library function
+            ret = libad9361.ad9361_set_bb_rate_custom_filter_manual(dev._device,
+                                                                    rate, fpass, fstop,
+                                                                    rate, rate)
+
+            if ret != 0:
+                return ret
+
+            for n in range(2):
+
+                # set RX gain parameters
+                chan_rx = dev.find_channel("voltage" + str(n), False)
+                chan_rx.attrs["gain_control_mode"].value = RX_GAIN_MODE
+                chan_rx.attrs["hardwaregain"].value = str(RX_GAIN_VALUE)
+
+                # set TX gain parameters
+                chan_tx = dev.find_channel("voltage" + str(n), True)
+                chan_tx.attrs["hardwaregain"].value = str(TX_GAIN_VALUE)
+           
+        return 0
 
     def configure_rx(self, bw, rate):
 
